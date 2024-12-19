@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>YouTube Channel Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h3>YouTube Channel Manager</h3>
+  <div class="button-group">
+    <button id="extractSubscriptions">Extract Subscriptions</button>
+    <button id="unsubscribeAll" class="danger">Unsubscribe All</button>
+  </div>
+  <div class="subscription-section">
+    <input type="file" id="fileInput" accept=".txt">
+    <div>
+      <label for="delayInput">Delay (seconds):</label>
+      <input type="number" id="delayInput" value="5" min="3" max="10">
+    </div>
+    <button id="startButton">Start Subscribing</button>
+  </div>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
