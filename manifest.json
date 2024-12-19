@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "YouTube Channel Manager",
+    "name": "Youtube subscription manager",
     "version": "1.0",
     "description": "Extract and subscribe to YouTube channels",
     "permissions": [

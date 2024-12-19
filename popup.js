@@ -181,46 +181,103 @@ function subscribeToChannel() {
   }
 }
 
-// Function to unsubscribe from all channels
-function unsubscribeFromAllChannels() {
+
+
+
+
+
+/// Function to unsubscribe from all channels with proper delay and confirmation handling
+async function unsubscribeFromAllChannels() {
   try {
+    // More robust selectors for unsubscribe buttons, including variations
     const unsubscribeSelectors = [
-      'yt-button-shape button[aria-label*="Unsubscribe"]',
-      '.yt-spec-button-shape-next[aria-label*="Unsubscribe"]',
-      '#subscribe-button button[aria-label*="Unsubscribe"]',
-      'ytd-subscribe-button-renderer button[aria-label*="Unsubscribe"]'
+      'ytd-channel-renderer #subscribe-button button[aria-label^="Unsubscribe from"]',
+      'ytd-channel-renderer button[aria-label^="Unsubscribe from"]',
+      '#subscribe-button button[aria-label^="Unsubscribe"]',
+      'button[aria-label^="Unsubscribe"]',
     ];
 
     let unsubscribeCount = 0;
     let totalChannels = 0;
 
-    // Find all unsubscribe buttons
-    for (const selector of unsubscribeSelectors) {
-      const buttons = document.querySelectorAll(selector);
-      totalChannels += buttons.length;
-      
-      buttons.forEach(button => {
-        // Click unsubscribe button
-        button.click();
-        
-        // Small delay to let the confirmation dialog appear
-        setTimeout(() => {
-          // Find and click the confirm button in the dialog
-          const confirmButton = document.querySelector('yt-button-shape button[aria-label*="Unsubscribe"]');
-          if (confirmButton) {
-            confirmButton.click();
-            unsubscribeCount++;
+    // Function to handle a single unsubscribe action, including retries
+    const unsubscribeChannel = async (button) => {
+      return new Promise(async (resolve) => {
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+          try {
+            // Click the initial unsubscribe button
+            button.click();
+
+            // Wait for the confirmation dialog to appear (adjust timeout as needed)
+            await new Promise((r) => setTimeout(r, 1000));
+
+            // More robust selector for the confirmation button
+            const confirmButton = document.querySelector(
+              'ytd-popup-container tp-yt-paper-dialog button[aria-label^="Unsubscribe"]'
+            );
+
+            if (confirmButton) {
+              confirmButton.click();
+              unsubscribeCount++;
+              // Wait for the unsubscription to process (adjust timeout as needed)
+              await new Promise((r) => setTimeout(r, 1500));
+              resolve();
+              return; // Exit the loop on success
+            } else {
+              console.warn(
+                "Confirmation button not found, retrying..."
+              );
+              attempts++;
+            }
+          } catch (error) {
+            console.error("Error unsubscribing:", error);
+            attempts++;
           }
-        }, 500);
+          // Wait before retrying
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        // If max attempts reached without success
+        console.error("Failed to unsubscribe after multiple attempts.");
+        resolve(); // Resolve anyway to continue with the next channel
       });
+    };
+
+    // Process each selector
+    for (const selector of unsubscribeSelectors) {
+      const buttons = Array.from(document.querySelectorAll(selector));
+      totalChannels += buttons.length;
+
+      // Process each button sequentially
+      for (const button of buttons) {
+        await unsubscribeChannel(button);
+      }
     }
+
+    // Scroll to load more channels if available
+    const scrollAndUnsubscribe = async () => {
+      const previousHeight = document.documentElement.scrollHeight;
+      window.scrollTo(0, previousHeight);
+
+      // Wait for new content to load (adjust timeout as needed)
+      await new Promise((r) => setTimeout(r, 3000));
+
+      // If new content was loaded, process new buttons
+      if (document.documentElement.scrollHeight > previousHeight) {
+        await unsubscribeFromAllChannels();
+      }
+    };
+
+    await scrollAndUnsubscribe();
 
     return {
       unsubscribed: unsubscribeCount,
-      total: totalChannels
+      total: totalChannels,
     };
   } catch (error) {
-    console.error('Error in unsubscribeFromAllChannels:', error);
+    console.error("Error in unsubscribeFromAllChannels:", error);
     return { unsubscribed: 0, total: 0 };
   }
 }
