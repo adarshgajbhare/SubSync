@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const unsubscribeButton = document.getElementById('unsubscribeAll');
   const statusDiv = document.getElementById('status');
   const delayInput = document.getElementById('delayInput');
-  
+
   let channels = [];
 
   // Extract subscriptions button click handler
@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
         target: { tabId: tab.id },
         func: extractSubscriptionURLs
       });
-      
+
       if (results && results[0] && results[0].result) {
         const { urls, count } = results[0].result;
         const blob = new Blob([urls.join('\n')], { type: 'text/plain' });
@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', function() {
         a.download = 'subscriptions.txt';
         a.click();
         URL.revokeObjectURL(url);
-        
+
         statusDiv.textContent = `Downloaded ${count} subscription URLs`;
       }
     } catch (error) {
@@ -85,54 +85,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const delay = Math.max(3, parseInt(delayInput.value) || 5) * 1000;
     statusDiv.textContent = 'Starting subscription process...';
-    
-    for (let i = 0; i < channels.length; i++) {
-      const channel = channels[i];
-      if (!channel) continue;
 
-      try {
-        statusDiv.textContent = `Processing channel ${i + 1}/${channels.length}...`;
-        
-        const tab = await chrome.tabs.create({ url: channel, active: false });
-        await new Promise(resolve => setTimeout(resolve, delay));
-        
-        let attempts = 0;
-        const maxAttempts = 5;
-        
-        while (attempts < maxAttempts) {
-          const result = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: subscribeToChannel,
-          });
-          
-          if (result[0].result === true) {
-            statusDiv.textContent = `Subscribed to ${i + 1}/${channels.length} channels`;
-            break;
-          }
-          
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          attempts++;
-          
-          if (attempts === maxAttempts) {
-            statusDiv.textContent = `Couldn't subscribe to channel ${i + 1}, moving to next...`;
-          }
-        }
+    chrome.runtime.sendMessage({ action: 'startSubscription', channels, delay });
+  });
 
-        await chrome.tabs.remove(tab.id);
-      } catch (error) {
-        console.error('Error subscribing to channel:', error);
-        statusDiv.textContent = `Error on channel ${i + 1}: ${error.message}`;
-      }
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'subscribed') {
+      statusDiv.textContent = `Subscribed to ${message.index} channels`;
+    } else if (message.action === 'subscriptionFailed') {
+      statusDiv.textContent = `Couldn't subscribe to channel ${message.index}, moving to next...`;
+    } else if (message.action === 'subscriptionError') {
+      statusDiv.textContent = `Error on channel ${message.index}: ${message.error}`;
+    } else if (message.action === 'subscriptionComplete') {
+      statusDiv.textContent = 'Finished processing all channels!';
     }
-
-    statusDiv.textContent = 'Finished processing all channels!';
   });
 });
 
 // Function to extract subscription URLs
 function extractSubscriptionURLs() {
   const channelURLs = new Set();
-  
+
   document.querySelectorAll("#contents ytd-channel-renderer a").forEach((link) => {
     const channelURL = link.href;
     if (channelURL && channelURL.includes('@')) {
@@ -144,140 +117,4 @@ function extractSubscriptionURLs() {
     urls: Array.from(channelURLs),
     count: channelURLs.size
   };
-}
-
-// Function to subscribe to a channel
-function subscribeToChannel() {
-  try {
-    const selectors = [
-      'yt-button-shape button[aria-label*="Subscribe"]',
-      '.yt-spec-button-shape-next:not([aria-label*="Subscribed"])',
-      '#subscribe-button button:not([aria-label*="Subscribed"])',
-      'ytd-subscribe-button-renderer button:not([aria-label*="Subscribed"])',
-      '#subscribe button:not([aria-label*="Subscribed"])'
-    ];
-
-    for (const selector of selectors) {
-      const buttons = document.querySelectorAll(selector);
-      
-      for (const button of buttons) {
-        const buttonText = button.textContent.toLowerCase();
-        const buttonLabel = (button.getAttribute('aria-label') || '').toLowerCase();
-
-        if (
-          (buttonText.includes('subscribe') && !buttonText.includes('subscribed')) ||
-          (buttonLabel.includes('subscribe') && !buttonLabel.includes('subscribed'))
-        ) {
-          button.click();
-          return true;
-        }
-      }
-    }
-    
-    return false;
-  } catch (error) {
-    console.error('Error in subscribeToChannel:', error);
-    return false;
-  }
-}
-
-
-
-
-
-
-/// Function to unsubscribe from all channels with proper delay and confirmation handling
-async function unsubscribeFromAllChannels() {
-  try {
-    // More robust selectors for unsubscribe buttons, including variations
-    const unsubscribeSelectors = [
-      'ytd-channel-renderer #subscribe-button button[aria-label^="Unsubscribe from"]',
-      'ytd-channel-renderer button[aria-label^="Unsubscribe from"]',
-      '#subscribe-button button[aria-label^="Unsubscribe"]',
-      'button[aria-label^="Unsubscribe"]',
-    ];
-
-    let unsubscribeCount = 0;
-    let totalChannels = 0;
-
-    // Function to handle a single unsubscribe action, including retries
-    const unsubscribeChannel = async (button) => {
-      return new Promise(async (resolve) => {
-        let attempts = 0;
-        const maxAttempts = 3;
-
-        while (attempts < maxAttempts) {
-          try {
-            // Click the initial unsubscribe button
-            button.click();
-
-            // Wait for the confirmation dialog to appear (adjust timeout as needed)
-            await new Promise((r) => setTimeout(r, 1000));
-
-            // More robust selector for the confirmation button
-            const confirmButton = document.querySelector(
-              'ytd-popup-container tp-yt-paper-dialog button[aria-label^="Unsubscribe"]'
-            );
-
-            if (confirmButton) {
-              confirmButton.click();
-              unsubscribeCount++;
-              // Wait for the unsubscription to process (adjust timeout as needed)
-              await new Promise((r) => setTimeout(r, 1500));
-              resolve();
-              return; // Exit the loop on success
-            } else {
-              console.warn(
-                "Confirmation button not found, retrying..."
-              );
-              attempts++;
-            }
-          } catch (error) {
-            console.error("Error unsubscribing:", error);
-            attempts++;
-          }
-          // Wait before retrying
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-        // If max attempts reached without success
-        console.error("Failed to unsubscribe after multiple attempts.");
-        resolve(); // Resolve anyway to continue with the next channel
-      });
-    };
-
-    // Process each selector
-    for (const selector of unsubscribeSelectors) {
-      const buttons = Array.from(document.querySelectorAll(selector));
-      totalChannels += buttons.length;
-
-      // Process each button sequentially
-      for (const button of buttons) {
-        await unsubscribeChannel(button);
-      }
-    }
-
-    // Scroll to load more channels if available
-    const scrollAndUnsubscribe = async () => {
-      const previousHeight = document.documentElement.scrollHeight;
-      window.scrollTo(0, previousHeight);
-
-      // Wait for new content to load (adjust timeout as needed)
-      await new Promise((r) => setTimeout(r, 3000));
-
-      // If new content was loaded, process new buttons
-      if (document.documentElement.scrollHeight > previousHeight) {
-        await unsubscribeFromAllChannels();
-      }
-    };
-
-    await scrollAndUnsubscribe();
-
-    return {
-      unsubscribed: unsubscribeCount,
-      total: totalChannels,
-    };
-  } catch (error) {
-    console.error("Error in unsubscribeFromAllChannels:", error);
-    return { unsubscribed: 0, total: 0 };
-  }
 }
